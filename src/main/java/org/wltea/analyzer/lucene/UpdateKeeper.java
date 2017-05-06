@@ -8,13 +8,13 @@ import java.util.Vector;
  * 1分钟自动判断更新
  */
 public class UpdateKeeper implements Runnable {
-    static final long INTERVAL = 60000L;
+    static final long INTERVAL = 30000L;
     private static UpdateKeeper singleton;
     Vector<UpdateJob> filterFactorys;
     Thread worker;
 
     private UpdateKeeper() {
-        this.filterFactorys = new Vector();
+        this.filterFactorys = new Vector<>();
 
         this.worker = new Thread(this);
         this.worker.setDaemon(true);
@@ -46,9 +46,10 @@ public class UpdateKeeper implements Runnable {
             }
 
             if (!this.filterFactorys.isEmpty()) {
+            	System.out.println("begin to run!=====================");
                 for (UpdateJob factory : this.filterFactorys) {
                     try {
-                        factory.update();
+                        factory.update(false);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -58,6 +59,6 @@ public class UpdateKeeper implements Runnable {
     }
 
     public interface UpdateJob {
-        void update() throws IOException;
+        void update(Boolean isFirst) throws IOException;
     }
 }

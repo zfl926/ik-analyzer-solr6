@@ -125,7 +125,13 @@ public class Dictionary {
 				do {
 					theWord = br.readLine();
 					if (theWord != null && !"".equals(theWord.trim())) {
-						singleton._MainDict.fillSegment(theWord.trim().toLowerCase().toCharArray());
+						System.out.println("the word = " + theWord);
+						//singleton._MainDict.disableSegment(charArray);
+						if ( theWord.contains("关") ){
+							singleton._MainDict.disableSegment(theWord.trim().toLowerCase().toCharArray());
+						} else {
+							singleton._MainDict.fillSegment(theWord.trim().toLowerCase().toCharArray());
+						}
 					}
 				} while (theWord != null);
 			} catch (IOException ioe) {

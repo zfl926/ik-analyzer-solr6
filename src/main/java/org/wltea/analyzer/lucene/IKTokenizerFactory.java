@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.util.*;
 
 import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.util.ClasspathResourceLoader;
 import org.apache.lucene.analysis.util.ResourceLoader;
 import org.apache.lucene.analysis.util.ResourceLoaderAware;
 import org.apache.lucene.analysis.util.TokenizerFactory;
@@ -36,7 +37,7 @@ public class IKTokenizerFactory extends TokenizerFactory
         implements ResourceLoaderAware, UpdateKeeper.UpdateJob {
   private boolean useSmart = false;
   private ResourceLoader loader;
-  private long lastUpdateTime = -1L;
+  private long lastUpdateTime = new Date().getTime();
   private String conf = null;
 
   public IKTokenizerFactory(Map<String, String> args) {
@@ -55,7 +56,10 @@ public class IKTokenizerFactory extends TokenizerFactory
   public void inform(ResourceLoader resourceLoader) throws IOException {
       System.out.println(String.format(":::ik:::inform:::::::::::::::::::::::: %s", this.conf));
       this.loader = resourceLoader;
-      update();
+      if ( loader instanceof ClasspathResourceLoader ){
+    	  System.out.println(":::ik:::inform:::::::::::::::::::::::: good!");
+      }
+      update(true);
       if ((this.conf != null) && (!this.conf.trim().isEmpty())) {
           UpdateKeeper.getInstance().register(this);
       }
@@ -66,17 +70,25 @@ public class IKTokenizerFactory extends TokenizerFactory
    * 执行更新词典操作
    * @throws IOException
    */
-  public void update() throws IOException {
-      //System.err.println("begin into [IKTokenizerFactory.update] method!!! ");
-      Properties p = canUpdate();
+  public void update(Boolean isFirst) throws IOException {
+      System.out.println("begin into [IKTokenizerFactory.update] method!!! ============================");
+      Properties p = null;
+      if ( !isFirst )
+    	  p = canUpdate();
+      else {
+    	  p = new Properties();
+          InputStream confStream = this.loader.openResource(this.conf);
+          p.load(confStream); 
+      }
       if (p != null) {
           List<String> dicPaths = SplitFileNames(p.getProperty("files"));
-          List inputStreamList = new ArrayList();
+          List<InputStream> inputStreamList = new ArrayList<>();
           for (String path : dicPaths) {
               if ((path != null) && (!path.isEmpty())) {
                   InputStream is = this.loader.openResource(path);
 
                   if (is != null) {
+                	  
                       inputStreamList.add(is);
                   }
               }
@@ -91,19 +103,23 @@ public class IKTokenizerFactory extends TokenizerFactory
      * @return
      */
     private Properties canUpdate() {
-        //System.err.println("begin into [IKTokenizerFactory.canUpdate] method!!! ");
+        System.out.println("begin into [IKTokenizerFactory.canUpdate] method!!! ");
         try {
-            if (this.conf == null)
+            if (this.conf == null){
+            	System.out.println("cancel [IKTokenizerFactory.canUpdate] because of the conf is null!!! ");
                 return null;
+            }
             Properties p = new Properties();
             InputStream confStream = this.loader.openResource(this.conf);
             p.load(confStream);
             confStream.close();
-            String lastupdate = p.getProperty("lastupdate", "0");
+            String timeToUpdate = p.getProperty("lastupdate", "0");
             //System.err.println(String.format("read %s file get lastupdate is %s.", this.conf, lastupdate));
-            Long t = new Long(lastupdate);
-
-            if (t.longValue() > this.lastUpdateTime) {
+            // we should check the diff from now to lasttime
+            Long t = new Date().getTime();
+            Long diff = t - this.lastUpdateTime;
+            System.out.println("[IKTokenizerFactory.canUpdate] diff time = " + diff + " timeToUpdate = " + timeToUpdate);
+            if (diff > Long.valueOf(timeToUpdate)) {
                 this.lastUpdateTime = t.longValue();
                 String paths = p.getProperty("files");
                 if ((paths == null) || (paths.trim().isEmpty()))
@@ -111,12 +127,12 @@ public class IKTokenizerFactory extends TokenizerFactory
                 System.out.println("loading conf files success.");
                 return p;
             }
-            this.lastUpdateTime = t.longValue();
+            //this.lastUpdateTime = t.longValue();
             return null;
         }
         catch (Exception e) {
-            //e.printStackTrace();
-            System.err.println("IK parsing conf NullPointerException~~~~~" + e.getStackTrace());
+            e.printStackTrace();
+            //System.err.println("IK parsing conf NullPointerException~~~~~" + e.getStackTrace());
         }
         return null;
     }
@@ -125,7 +141,7 @@ public class IKTokenizerFactory extends TokenizerFactory
         if (fileNames == null) {
             return Collections.emptyList();
         }
-        List result = new ArrayList();
+        List<String> result = new ArrayList<>();
         for (String file : fileNames.split("[,\\s]+")) {
             result.add(file);
         }
