@@ -106,6 +106,21 @@ public class Dictionary {
 	}
 
 	/**
+	 * @param extDics
+	 * @param stopDics
+	 * @return
+	 */
+	public void addExtStopDicts(List<String> extDics, List<String> stopDics){
+		if (singleton == null) {
+			Configuration cfg = DefaultConfig.getInstance();
+			initial(cfg);
+		}
+		singleton.addWords(extDics);
+		singleton.addStopWords(stopDics);
+	}
+	
+	
+	/**
 	 * 重新更新词典
 	 * 由于停用词等不经常变也不建议常增加，故这里只修改动态扩展词库
 	 * @param inputStreamList
@@ -125,13 +140,13 @@ public class Dictionary {
 				do {
 					theWord = br.readLine();
 					if (theWord != null && !"".equals(theWord.trim())) {
-						System.out.println("the word = " + theWord);
+//						System.out.println("the word = " + theWord);
 						//singleton._MainDict.disableSegment(charArray);
-						if ( theWord.contains("关") ){
-							singleton._MainDict.disableSegment(theWord.trim().toLowerCase().toCharArray());
-						} else {
+//						if ( theWord.contains("关") ){
+//							singleton._MainDict.disableSegment(theWord.trim().toLowerCase().toCharArray());
+//						} else {
 							singleton._MainDict.fillSegment(theWord.trim().toLowerCase().toCharArray());
-						}
+//						}
 					}
 				} while (theWord != null);
 			} catch (IOException ioe) {
@@ -158,6 +173,33 @@ public class Dictionary {
 			}
 		}
 	}
+	
+	/**
+	 * 添加停止词条
+	 * @param words
+	 */
+	public void addStopWords(Collection<String> words){
+		if(words != null){
+			for(String word : words){
+				if (word != null) {
+					//批量加载词条到主内存词典中
+					singleton._StopWordDict.fillSegment(word.trim().toLowerCase().toCharArray());
+				}
+			}
+		}
+	}
+	
+	public void disableStopWords(Collection<String> words){
+		if(words != null){
+			for(String word : words){
+				if (word != null) {
+					//批量屏蔽词条
+					singleton._StopWordDict.disableSegment(word.trim().toLowerCase().toCharArray());
+				}
+			}
+		}		
+	}
+	
 	
 	/**
 	 * 批量移除（屏蔽）词条
