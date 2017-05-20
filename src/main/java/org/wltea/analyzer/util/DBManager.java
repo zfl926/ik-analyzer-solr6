@@ -12,13 +12,24 @@ public class DBManager {
 	
 	private DruidDataSource ds;
 	
-	public DBManager(String drvier, String url, String user, String password) throws SQLException{		
+	private static DBManager _instance = null;
+	
+	
+	private DBManager(String drvier, String url, String user, String password) throws SQLException{		
 		ds = new DruidDataSource();
 		ds.setDriverClassName(drvier);
 		ds.setUrl(url);
 		ds.setUsername(user);
 		ds.setPassword(password);
 		ds.init();
+	}
+	
+	public static synchronized DBManager getInstance(String drvier, String url, String user, String password) throws SQLException{
+		if ( _instance == null ){
+			_instance = new DBManager(drvier, url, user, password);
+		}
+		
+		return _instance;
 	}
 	
 	
@@ -38,6 +49,7 @@ public class DBManager {
 		while ( rs.next() ){
 			trs.add(parser.parse(rs));
 		}
+		conn.close();
 		return trs;
 	}
 	

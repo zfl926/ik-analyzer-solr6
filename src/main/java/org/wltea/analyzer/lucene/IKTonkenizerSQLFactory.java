@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.util.ResourceLoader;
@@ -20,7 +22,7 @@ import org.wltea.analyzer.dic.Dictionary;
 import org.wltea.analyzer.util.DBManager;
 
 public class IKTonkenizerSQLFactory extends TokenizerFactory
-							implements ResourceLoaderAware{
+							implements ResourceLoaderAware {
 
 	private boolean useSmart =false;
 	private String conf = null;
@@ -32,13 +34,16 @@ public class IKTonkenizerSQLFactory extends TokenizerFactory
 	private static final String SQL_QUERY = "select type, word from ext_stop_word where is_delete = 0";
 	
 	private DBManager dbManager;
+	
+	private Lock lock = new ReentrantLock();
+	private static Boolean hasRun = false;
 		
-	protected IKTonkenizerSQLFactory(Map<String, String> args) {
+	public IKTonkenizerSQLFactory(Map<String, String> args) {
 		super(args);
 		this.useSmart = getBoolean(args, "useSmart", false);
 		this.conf = get(args, "conf");
 		// load conf file to connect to db
-	    System.out.println(":::ik:construction:::::::::::::::::::::::::: %s");
+	    System.out.println(":::ik:construction::::::::::::::::::::::::::");
 	}
 
 	private boolean useSmart(){
@@ -73,12 +78,20 @@ public class IKTonkenizerSQLFactory extends TokenizerFactory
 	 */
 	@Override
 	public void inform(ResourceLoader loader) throws IOException {
+		System.out.println(":::[inform]::::::::::::::::::::::::::");
 		this.loader = loader;
 		InputStream confStream = this.loader.openResource(this.conf);
 		Properties p = new Properties();
-        p.load(confStream); 
+        p.load(confStream);
+        
+//        System.out.println(Thread.currentThread().getName() + ":::[inform]:::::::::::::::::::::::::: driver = " + p.getProperty("driver"));
+//        System.out.println(Thread.currentThread().getName() + ":::[inform]:::::::::::::::::::::::::: url = " + p.getProperty("url"));
+//        System.out.println(Thread.currentThread().getName() + ":::[inform]:::::::::::::::::::::::::: driver = " + p.getProperty("user"));
+//        System.out.println(Thread.currentThread().getName() + ":::[inform]:::::::::::::::::::::::::: driver = " + p.getProperty("password"));
+        
 		try {
-			dbManager = new DBManager(p.getProperty("driver"),
+			
+			dbManager = DBManager.getInstance(p.getProperty("driver"),
 					p.getProperty("url"),
 					p.getProperty("user"),
 					p.getProperty("password"));
@@ -97,9 +110,11 @@ public class IKTonkenizerSQLFactory extends TokenizerFactory
 			
 			words.forEach(word -> {
 				if ( word.type == 1 ){
-					extWords.add(word.word);
+					if ( !extWords.contains(word.word) )
+						extWords.add(word.word);
 				} else if ( word.type == 2 ){
-					stopWords.add(word.word);
+					if ( !stopWords.contains(word.word) )
+						stopWords.add(word.word);
 				}
 			});
 			
@@ -110,67 +125,86 @@ public class IKTonkenizerSQLFactory extends TokenizerFactory
 				sington = Dictionary.initial(DefaultConfig.getInstance());
 			}
 			
+//			System.out.println(Thread.currentThread().getName() + "::[first create] extWords = " + extWords);
+//			System.out.println(Thread.currentThread().getName() + "::[first create] stopWords = " + stopWords);
+			
+			//if ( !hasRun )
 			sington.addExtStopDicts(extWords, stopWords);
 			
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
 		
-		// 设置timer，每过5秒check 数据库
-		new Timer(true).schedule(new TimerTask(){
-
-			@Override
-			public void run() {
-				
-				List<Word> words = new ArrayList<>();
-				try {
-					words = dbManager.query(SQL_QUERY, rs ->{
-						Word word = new Word();
-						try {
-							word.type = rs.getInt(1);
-							word.word = rs.getString(2);
-						} catch (Exception e) {
-							e.printStackTrace();
+		try {
+			if ( lock.tryLock() ){
+				if ( !hasRun ) {
+					new Timer(true).schedule(new TimerTask(){
+						@Override
+						public void run() {
+							System.out.println(":::::::::::::::::::[run job]");
+							List<Word> words = new ArrayList<>();
+							try {
+								words = dbManager.query(SQL_QUERY, rs ->{
+									Word word = new Word();
+									try {
+										word.type = rs.getInt(1);
+										word.word = rs.getString(2);
+									} catch (Exception e) {
+										e.printStackTrace();
+									}
+									
+									return word;
+								});
+								
+								List<String> extNew = new ArrayList<>();
+								List<String> stopNew = new ArrayList<>();
+								
+								words.forEach(word -> {
+									if ( word.type == 1 ){
+										extNew.add(word.word);
+									} else if ( word.type == 2 ){
+										stopNew.add(word.word);
+									}
+								});
+								
+//								System.out.println(Thread.currentThread().getName() + "::[Job]::: load from db words = " + extNew);
+//								System.out.println(Thread.currentThread().getName() + "::[Job]::: origin words = " + extWords);
+								
+								
+								List<String> newExtWords = findDiff(extNew, extWords);
+								List<String> delExtWords = findDiff(extWords, extNew);
+								
+								
+								
+								Dictionary.getSingleton().addWords(newExtWords);
+								Dictionary.getSingleton().disableWords(delExtWords);
+								
+								List<String> newStopWords = findDiff(stopNew, stopWords);
+								List<String> delStopWords = findDiff(stopWords, stopNew);
+								
+//								System.out.println(Thread.currentThread().getName() + "::[Job]::: newExtWords  = " + newExtWords);
+//								System.out.println(Thread.currentThread().getName() + "::[Job]::: delExtWords  = " + delExtWords);
+								
+								Dictionary.getSingleton().addStopWords(newStopWords);
+								Dictionary.getSingleton().disableStopWords(delStopWords);
+								
+							} catch (Throwable e) {
+								e.printStackTrace();
+							}
 						}
-						
-						return word;
-					});
-					
-					List<String> extNew = new ArrayList<>();
-					List<String> stopNew = new ArrayList<>();
-					
-					words.forEach(word -> {
-						if ( word.type == 1 ){
-							extNew.add(word.word);
-						} else if ( word.type == 2 ){
-							stopNew.add(word.word);
-						}
-					});
-					
-					List<String> newExtWords = findDiff(extNew, extWords);
-					List<String> delExtWords = findDiff(extWords, extNew);
-					
-					Dictionary.getSingleton().addWords(newExtWords);
-					Dictionary.getSingleton().disableWords(delExtWords);
-					
-					List<String> newStopWords = findDiff(stopNew, stopWords);
-					List<String> delStopWords = findDiff(stopWords, stopNew);
-					
-					Dictionary.getSingleton().addStopWords(newStopWords);
-					Dictionary.getSingleton().disableStopWords(delStopWords);
-					
-				} catch (SQLException e) {
-					e.printStackTrace();
+					}, 15000, 3000);
+					hasRun = true;
 				}
-			}
-			
-		}, 1000);
-		
+			}		
+		} finally {
+			lock.unlock();
+		}
 	}
 
 	@Override
 	public Tokenizer create(AttributeFactory factory) {
 		return new IKTokenizer(factory, useSmart());
 	}
+	
 
 }
